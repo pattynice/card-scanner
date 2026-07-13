@@ -7,29 +7,57 @@
 <style>
   body { font-family: Arial, sans-serif; margin: 0; padding: 16px; background: #1F4E78; color: white; text-align: center; }
   h1 { font-size: 20px; margin-bottom: 12px; }
+  #modeToggle { margin-bottom: 14px; }
+  .modeBtn { font-size: 15px; padding: 10px 18px; border: 2px solid white; background: transparent; color: white; font-weight: bold; }
+  .modeBtn:first-child { border-radius: 8px 0 0 8px; }
+  .modeBtn:last-child { border-radius: 0 8px 8px 0; }
+  .modeBtn.active { background: #FFC000; color: #1F4E78; border-color: #FFC000; }
   #video { width: 100%; max-width: 480px; border-radius: 8px; border: 3px solid white; background: #000; }
   #startBtn { font-size: 18px; padding: 14px 28px; border-radius: 8px; border: none; background: #FFC000; color: #1F4E78; font-weight: bold; margin-bottom: 16px; }
   #result { margin-top: 16px; padding: 14px; border-radius: 8px; font-size: 16px; font-weight: bold; min-height: 24px; white-space: pre-wrap; text-align: left; }
   .ok { background: #C6EFCE; color: #333; }
   .warn { background: #FFC7CE; color: #333; }
   .idle { background: rgba(255,255,255,0.15); }
+  #buyForm { display:none; margin-top: 16px; padding: 16px; background: rgba(255,255,255,0.15); border-radius: 8px; max-width: 480px; margin-left: auto; margin-right: auto; }
+  #buySkuLabel { margin-bottom: 10px; font-weight: bold; }
+  #buyPriceInput { font-size: 20px; padding: 10px; width: 70%; border-radius: 6px; border: none; text-align: center; }
+  .buyActionBtn { font-size: 16px; padding: 10px 20px; border-radius: 6px; border: none; font-weight: bold; margin: 10px 6px 0; }
+  #buySubmitBtn { background: #C6EFCE; color: #333; }
+  #buyCancelBtn { background: #FFC7CE; color: #333; }
+  #buyFormMsg { margin-top: 8px; font-size: 13px; }
   #log { margin-top: 16px; font-size: 13px; text-align: left; max-width: 480px; margin-left: auto; margin-right: auto; opacity: 0.85; }
   #log div { padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.2); }
 </style>
 </head>
 <body>
-  <h1>Scan a card to mark it sold</h1>
+  <h1>Pokémon Card Scanner</h1>
+
+  <div id="modeToggle">
+    <button id="sellModeBtn" class="modeBtn active">Sell</button>
+    <button id="buyModeBtn" class="modeBtn">Buy</button>
+  </div>
+
   <button id="startBtn">Start Camera</button>
   <video id="video" muted playsinline autoplay style="display:none;"></video>
   <div id="result" class="idle">Tap Start Camera, then allow camera access if asked.</div>
+
+  <div id="buyForm">
+    <div id="buySkuLabel"></div>
+    <input id="buyPriceInput" type="number" step="0.01" inputmode="decimal" placeholder="Price paid ($)">
+    <div>
+      <button id="buySubmitBtn" class="buyActionBtn">Submit</button>
+      <button id="buyCancelBtn" class="buyActionBtn">Cancel</button>
+    </div>
+    <div id="buyFormMsg"></div>
+  </div>
+
   <div id="log"></div>
 
   <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
   <script>
     // ====================================================================
-    // PASTE YOUR APPS SCRIPT WEB APP URL BELOW (between the quotes).
-    // Get it from your Google Sheet: Card Tracker menu > Show Phone Scanner URL.
-    // It looks like: https://script.google.com/macros/s/AKfycb.../exec
+    // Your Apps Script Web App URL. Get it from your Google Sheet:
+    // Card Tracker menu > Show Phone Scanner URL.
     // ====================================================================
     var APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbybeo08H7DPWsqh5VfoKBYvL55XBP-oZD7V5hnykEuV-CN4RMMnfQdKGj9V6AknaV7A/exec";
 
@@ -37,13 +65,36 @@
     var logDiv = document.getElementById('log');
     var startBtn = document.getElementById('startBtn');
     var video = document.getElementById('video');
+    var sellModeBtn = document.getElementById('sellModeBtn');
+    var buyModeBtn = document.getElementById('buyModeBtn');
+    var buyForm = document.getElementById('buyForm');
+    var buySkuLabel = document.getElementById('buySkuLabel');
+    var buyPriceInput = document.getElementById('buyPriceInput');
+    var buySubmitBtn = document.getElementById('buySubmitBtn');
+    var buyCancelBtn = document.getElementById('buyCancelBtn');
+    var buyFormMsg = document.getElementById('buyFormMsg');
+
+    var mode = 'sell';
     var busy = false, lastCode = "", lastTime = 0;
     var codeReader = null;
+    var pendingBuySku = null;
+
+    function setMode(m) {
+      mode = m;
+      sellModeBtn.classList.toggle('active', m === 'sell');
+      buyModeBtn.classList.toggle('active', m === 'buy');
+      resultDiv.className = 'idle';
+      resultDiv.textContent = m === 'sell'
+        ? 'Sell mode — scan a card to mark it sold at market price.'
+        : 'Buy mode — scan a card, then enter what you paid.';
+    }
+    sellModeBtn.addEventListener('click', function () { setMode('sell'); });
+    buyModeBtn.addEventListener('click', function () { setMode('buy'); });
 
     startBtn.addEventListener('click', function () {
       if (APPS_SCRIPT_URL.indexOf("PASTE_YOUR") === 0) {
         resultDiv.className = 'warn';
-        resultDiv.textContent = "You still need to paste your Apps Script URL into this page's code (see the comment near the top of the <script> section).";
+        resultDiv.textContent = "You still need to paste your Apps Script URL into this page's code.";
         return;
       }
 
@@ -52,13 +103,13 @@
 
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         resultDiv.className = 'warn';
-        resultDiv.textContent = 'This browser has no camera API available. Try a different browser (Safari on iOS, Chrome on Android).';
+        resultDiv.textContent = 'This browser has no camera API available. Try Safari (iOS) or Chrome (Android).';
         return;
       }
 
       navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
         .then(function (stream) {
-          stream.getTracks().forEach(function (t) { t.stop(); }); // just a permission test
+          stream.getTracks().forEach(function (t) { t.stop(); });
           startBtn.style.display = 'none';
           video.style.display = 'block';
           resultDiv.className = 'ok';
@@ -67,15 +118,21 @@
           if (!codeReader) codeReader = new ZXing.BrowserMultiFormatReader();
 
           codeReader.decodeFromVideoDevice(null, 'video', function (result, err) {
-            if (result) {
-              var text = result.getText();
-              var now = Date.now();
-              if (busy || (text === lastCode && now - lastTime < 3000)) return;
-              lastCode = text; lastTime = now;
+            if (!result) return;
+            var text = result.getText();
+            var now = Date.now();
+            if (busy || (text === lastCode && now - lastTime < 3000)) return;
+            lastCode = text; lastTime = now;
+
+            if (mode === 'sell') {
               submitScan(text);
+            } else {
+              openBuyForm(text);
             }
           }).then(function () {
-            resultDiv.textContent = 'Point camera at a barcode...';
+            resultDiv.textContent = mode === 'sell'
+              ? 'Point camera at a barcode...'
+              : 'Point camera at a barcode, then enter the price.';
           }).catch(function (err2) {
             resultDiv.className = 'warn';
             resultDiv.textContent = 'Scanner failed to start: ' + err2.name + ' - ' + err2.message;
@@ -87,6 +144,7 @@
         });
     });
 
+    // ---------- SELL MODE ----------
     function submitScan(sku) {
       busy = true;
       resultDiv.className = 'idle';
@@ -94,7 +152,7 @@
 
       fetch(APPS_SCRIPT_URL, {
         method: 'POST',
-        body: JSON.stringify({ sku: sku })
+        body: JSON.stringify({ sku: sku, action: 'sell' })
       })
         .then(function (r) { return r.json(); })
         .then(function (data) {
@@ -103,15 +161,65 @@
           logEntry(data.message);
           busy = false;
         })
-        .catch(function (err) {
-          // A blocked cross-origin response still usually means the sheet WAS updated
-          // server-side — the browser is just refusing to hand back the confirmation text.
+        .catch(function () {
           resultDiv.textContent = 'Sent — check your sheet to confirm it updated (could not read back a confirmation message).';
           resultDiv.className = 'warn';
-          logEntry('Sent ' + sku + ' (no confirmation readable)');
+          logEntry('Sent sell for ' + sku + ' (no confirmation readable)');
           busy = false;
         });
     }
+
+    // ---------- BUY MODE ----------
+    function openBuyForm(sku) {
+      busy = true; // pause further scans while the form is open
+      pendingBuySku = sku;
+      buySkuLabel.textContent = 'Scanned: ' + sku;
+      buyPriceInput.value = '';
+      buyFormMsg.textContent = '';
+      buyForm.style.display = 'block';
+      resultDiv.className = 'idle';
+      resultDiv.textContent = 'Enter the price you paid, then Submit.';
+      buyPriceInput.focus();
+    }
+
+    buyCancelBtn.addEventListener('click', function () {
+      buyForm.style.display = 'none';
+      busy = false;
+      lastCode = ""; // allow re-scanning the same card if they cancel
+      resultDiv.className = 'idle';
+      resultDiv.textContent = 'Buy mode — scan a card, then enter what you paid.';
+    });
+
+    buySubmitBtn.addEventListener('click', function () {
+      var price = parseFloat(buyPriceInput.value);
+      if (isNaN(price) || price <= 0) {
+        buyFormMsg.textContent = 'Enter a valid price greater than 0.';
+        return;
+      }
+
+      var sku = pendingBuySku;
+      buyForm.style.display = 'none';
+      resultDiv.className = 'idle';
+      resultDiv.textContent = 'Submitting purchase...';
+
+      fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({ sku: sku, action: 'buy', buyPrice: price })
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          resultDiv.textContent = data.message;
+          resultDiv.className = data.ok ? 'ok' : 'warn';
+          logEntry(data.message);
+          busy = false;
+        })
+        .catch(function () {
+          resultDiv.textContent = 'Sent — check your sheet to confirm it updated (could not read back a confirmation message).';
+          resultDiv.className = 'warn';
+          logEntry('Sent buy for ' + sku + ' at $' + price.toFixed(2) + ' (no confirmation readable)');
+          busy = false;
+        });
+    });
 
     function logEntry(msg) {
       var entry = document.createElement('div');
