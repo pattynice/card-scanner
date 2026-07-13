@@ -7,48 +7,38 @@
 <style>
   body { font-family: Arial, sans-serif; margin: 0; padding: 16px; background: #1F4E78; color: white; text-align: center; }
   h1 { font-size: 20px; margin-bottom: 12px; }
-  #modeToggle { margin-bottom: 14px; }
-  .modeBtn { font-size: 15px; padding: 10px 18px; border: 2px solid white; background: transparent; color: white; font-weight: bold; }
-  .modeBtn:first-child { border-radius: 8px 0 0 8px; }
-  .modeBtn:last-child { border-radius: 0 8px 8px 0; }
-  .modeBtn.active { background: #FFC000; color: #1F4E78; border-color: #FFC000; }
   #video { width: 100%; max-width: 480px; border-radius: 8px; border: 3px solid white; background: #000; }
   #startBtn { font-size: 18px; padding: 14px 28px; border-radius: 8px; border: none; background: #FFC000; color: #1F4E78; font-weight: bold; margin-bottom: 16px; }
   #result { margin-top: 16px; padding: 14px; border-radius: 8px; font-size: 16px; font-weight: bold; min-height: 24px; white-space: pre-wrap; text-align: left; }
   .ok { background: #C6EFCE; color: #333; }
   .warn { background: #FFC7CE; color: #333; }
   .idle { background: rgba(255,255,255,0.15); }
-  #buyForm { display:none; margin-top: 16px; padding: 16px; background: rgba(255,255,255,0.15); border-radius: 8px; max-width: 480px; margin-left: auto; margin-right: auto; }
-  #buySkuLabel { margin-bottom: 10px; font-weight: bold; }
-  #buyPriceInput { font-size: 20px; padding: 10px; width: 70%; border-radius: 6px; border: none; text-align: center; }
-  .buyActionBtn { font-size: 16px; padding: 10px 20px; border-radius: 6px; border: none; font-weight: bold; margin: 10px 6px 0; }
-  #buySubmitBtn { background: #C6EFCE; color: #333; }
-  #buyCancelBtn { background: #FFC7CE; color: #333; }
-  #buyFormMsg { margin-top: 8px; font-size: 13px; }
+  #priceForm { display:none; margin-top: 16px; padding: 16px; background: rgba(255,255,255,0.15); border-radius: 8px; max-width: 480px; margin-left: auto; margin-right: auto; }
+  #priceSkuLabel { margin-bottom: 10px; font-weight: bold; }
+  #priceInput { font-size: 20px; padding: 10px; width: 70%; border-radius: 6px; border: none; text-align: center; }
+  .priceActionBtn { font-size: 16px; padding: 10px 20px; border-radius: 6px; border: none; font-weight: bold; margin: 10px 6px 0; }
+  #priceSubmitBtn { background: #C6EFCE; color: #333; }
+  #priceCancelBtn { background: #FFC7CE; color: #333; }
+  #priceFormMsg { margin-top: 8px; font-size: 13px; }
   #log { margin-top: 16px; font-size: 13px; text-align: left; max-width: 480px; margin-left: auto; margin-right: auto; opacity: 0.85; }
   #log div { padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.2); }
 </style>
 </head>
 <body>
-  <h1>Pokémon Card Scanner</h1>
-
-  <div id="modeToggle">
-    <button id="sellModeBtn" class="modeBtn active">Sell</button>
-    <button id="buyModeBtn" class="modeBtn">Buy</button>
-  </div>
+  <h1>Scan a card to mark it sold</h1>
 
   <button id="startBtn">Start Camera</button>
   <video id="video" muted playsinline autoplay style="display:none;"></video>
   <div id="result" class="idle">Tap Start Camera, then allow camera access if asked.</div>
 
-  <div id="buyForm">
-    <div id="buySkuLabel"></div>
-    <input id="buyPriceInput" type="number" step="0.01" inputmode="decimal" placeholder="Price paid ($)">
+  <div id="priceForm">
+    <div id="priceSkuLabel"></div>
+    <input id="priceInput" type="number" step="0.01" inputmode="decimal" placeholder="Price sold for ($)">
     <div>
-      <button id="buySubmitBtn" class="buyActionBtn">Submit</button>
-      <button id="buyCancelBtn" class="buyActionBtn">Cancel</button>
+      <button id="priceSubmitBtn" class="priceActionBtn">Submit</button>
+      <button id="priceCancelBtn" class="priceActionBtn">Cancel</button>
     </div>
-    <div id="buyFormMsg"></div>
+    <div id="priceFormMsg"></div>
   </div>
 
   <div id="log"></div>
@@ -65,31 +55,16 @@
     var logDiv = document.getElementById('log');
     var startBtn = document.getElementById('startBtn');
     var video = document.getElementById('video');
-    var sellModeBtn = document.getElementById('sellModeBtn');
-    var buyModeBtn = document.getElementById('buyModeBtn');
-    var buyForm = document.getElementById('buyForm');
-    var buySkuLabel = document.getElementById('buySkuLabel');
-    var buyPriceInput = document.getElementById('buyPriceInput');
-    var buySubmitBtn = document.getElementById('buySubmitBtn');
-    var buyCancelBtn = document.getElementById('buyCancelBtn');
-    var buyFormMsg = document.getElementById('buyFormMsg');
+    var priceForm = document.getElementById('priceForm');
+    var priceSkuLabel = document.getElementById('priceSkuLabel');
+    var priceInput = document.getElementById('priceInput');
+    var priceSubmitBtn = document.getElementById('priceSubmitBtn');
+    var priceCancelBtn = document.getElementById('priceCancelBtn');
+    var priceFormMsg = document.getElementById('priceFormMsg');
 
-    var mode = 'sell';
     var busy = false, lastCode = "", lastTime = 0;
     var codeReader = null;
-    var pendingBuySku = null;
-
-    function setMode(m) {
-      mode = m;
-      sellModeBtn.classList.toggle('active', m === 'sell');
-      buyModeBtn.classList.toggle('active', m === 'buy');
-      resultDiv.className = 'idle';
-      resultDiv.textContent = m === 'sell'
-        ? 'Sell mode — scan a card to mark it sold at market price.'
-        : 'Buy mode — scan a card, then enter what you paid.';
-    }
-    sellModeBtn.addEventListener('click', function () { setMode('sell'); });
-    buyModeBtn.addEventListener('click', function () { setMode('buy'); });
+    var pendingSku = null;
 
     startBtn.addEventListener('click', function () {
       if (APPS_SCRIPT_URL.indexOf("PASTE_YOUR") === 0) {
@@ -123,16 +98,9 @@
             var now = Date.now();
             if (busy || (text === lastCode && now - lastTime < 3000)) return;
             lastCode = text; lastTime = now;
-
-            if (mode === 'sell') {
-              submitScan(text);
-            } else {
-              openBuyForm(text);
-            }
+            openPriceForm(text);
           }).then(function () {
-            resultDiv.textContent = mode === 'sell'
-              ? 'Point camera at a barcode...'
-              : 'Point camera at a barcode, then enter the price.';
+            resultDiv.textContent = 'Point camera at a barcode...';
           }).catch(function (err2) {
             resultDiv.className = 'warn';
             resultDiv.textContent = 'Scanner failed to start: ' + err2.name + ' - ' + err2.message;
@@ -144,67 +112,41 @@
         });
     });
 
-    // ---------- SELL MODE ----------
-    function submitScan(sku) {
-      busy = true;
-      resultDiv.className = 'idle';
-      resultDiv.textContent = 'Looking up ' + sku + '...';
-
-      fetch(APPS_SCRIPT_URL, {
-        method: 'POST',
-        body: JSON.stringify({ sku: sku, action: 'sell' })
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          resultDiv.textContent = data.message;
-          resultDiv.className = data.ok ? 'ok' : 'warn';
-          logEntry(data.message);
-          busy = false;
-        })
-        .catch(function () {
-          resultDiv.textContent = 'Sent — check your sheet to confirm it updated (could not read back a confirmation message).';
-          resultDiv.className = 'warn';
-          logEntry('Sent sell for ' + sku + ' (no confirmation readable)');
-          busy = false;
-        });
-    }
-
-    // ---------- BUY MODE ----------
-    function openBuyForm(sku) {
+    function openPriceForm(sku) {
       busy = true; // pause further scans while the form is open
-      pendingBuySku = sku;
-      buySkuLabel.textContent = 'Scanned: ' + sku;
-      buyPriceInput.value = '';
-      buyFormMsg.textContent = '';
-      buyForm.style.display = 'block';
+      pendingSku = sku;
+      priceSkuLabel.textContent = 'Scanned: ' + sku;
+      priceInput.value = '';
+      priceFormMsg.textContent = '';
+      priceForm.style.display = 'block';
       resultDiv.className = 'idle';
-      resultDiv.textContent = 'Enter the price you paid, then Submit.';
-      buyPriceInput.focus();
+      resultDiv.textContent = 'Enter the price you sold it for, then Submit.';
+      priceInput.focus();
     }
 
-    buyCancelBtn.addEventListener('click', function () {
-      buyForm.style.display = 'none';
+    priceCancelBtn.addEventListener('click', function () {
+      priceForm.style.display = 'none';
       busy = false;
       lastCode = ""; // allow re-scanning the same card if they cancel
       resultDiv.className = 'idle';
-      resultDiv.textContent = 'Buy mode — scan a card, then enter what you paid.';
+      resultDiv.textContent = 'Point camera at a barcode...';
     });
 
-    buySubmitBtn.addEventListener('click', function () {
-      var price = parseFloat(buyPriceInput.value);
+    priceSubmitBtn.addEventListener('click', function () {
+      var price = parseFloat(priceInput.value);
       if (isNaN(price) || price <= 0) {
-        buyFormMsg.textContent = 'Enter a valid price greater than 0.';
+        priceFormMsg.textContent = 'Enter a valid price greater than 0.';
         return;
       }
 
-      var sku = pendingBuySku;
-      buyForm.style.display = 'none';
+      var sku = pendingSku;
+      priceForm.style.display = 'none';
       resultDiv.className = 'idle';
-      resultDiv.textContent = 'Submitting purchase...';
+      resultDiv.textContent = 'Submitting sale...';
 
       fetch(APPS_SCRIPT_URL, {
         method: 'POST',
-        body: JSON.stringify({ sku: sku, action: 'buy', buyPrice: price })
+        body: JSON.stringify({ sku: sku, action: 'sell', sellPrice: price })
       })
         .then(function (r) { return r.json(); })
         .then(function (data) {
@@ -216,7 +158,7 @@
         .catch(function () {
           resultDiv.textContent = 'Sent — check your sheet to confirm it updated (could not read back a confirmation message).';
           resultDiv.className = 'warn';
-          logEntry('Sent buy for ' + sku + ' at $' + price.toFixed(2) + ' (no confirmation readable)');
+          logEntry('Sent sale for ' + sku + ' at $' + price.toFixed(2) + ' (no confirmation readable)');
           busy = false;
         });
     });
