@@ -13,6 +13,13 @@
   .ok { background: #C6EFCE; color: #333; }
   .warn { background: #FFC7CE; color: #333; }
   .idle { background: rgba(255,255,255,0.15); }
+  #priceForm { display:none; margin-top: 16px; padding: 16px; background: rgba(255,255,255,0.15); border-radius: 8px; max-width: 480px; margin-left: auto; margin-right: auto; }
+  #priceSkuLabel { margin-bottom: 10px; font-weight: bold; }
+  #priceInput { font-size: 20px; padding: 10px; width: 70%; border-radius: 6px; border: none; text-align: center; }
+  .priceActionBtn { font-size: 16px; padding: 10px 20px; border-radius: 6px; border: none; font-weight: bold; margin: 10px 6px 0; }
+  #priceSubmitBtn { background: #C6EFCE; color: #333; }
+  #priceCancelBtn { background: #FFC7CE; color: #333; }
+  #priceFormMsg { margin-top: 8px; font-size: 13px; }
   #log { margin-top: 16px; font-size: 13px; text-align: left; max-width: 480px; margin-left: auto; margin-right: auto; opacity: 0.85; }
   #log div { padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.2); }
 </style>
@@ -24,6 +31,16 @@
   <video id="video" muted playsinline autoplay style="display:none;"></video>
   <div id="result" class="idle">Tap Start Camera, then allow camera access if asked.</div>
 
+  <div id="priceForm">
+    <div id="priceSkuLabel"></div>
+    <input id="priceInput" type="number" step="0.01" inputmode="decimal" placeholder="Price sold for ($)">
+    <div>
+      <button id="priceSubmitBtn" class="priceActionBtn">Submit</button>
+      <button id="priceCancelBtn" class="priceActionBtn">Cancel</button>
+    </div>
+    <div id="priceFormMsg"></div>
+  </div>
+
   <div id="log"></div>
 
   <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
@@ -32,16 +49,30 @@
     // Your Apps Script Web App URL. Get it from your Google Sheet:
     // Card Tracker menu > Show Phone Scanner URL.
     // ====================================================================
-    var APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw32UHxuql4VXF80E6xroflBBymF1r2fQ6PlQyIsfKKBTXEk2YC0MDt33eZliqOOW79yA/exec";
+    var APPS_SCRIPT_URL = "Phttps://script.google.com/macros/s/AKfycbwsq6BhLye5KIgRZnMLOno40JJsuqzuE_DZgjYvbpqew5pBPCq9CL2AgnygRuLnIeKVtg/exec";
 
     var resultDiv = document.getElementById('result');
     var logDiv = document.getElementById('log');
     var startBtn = document.getElementById('startBtn');
     var video = document.getElementById('video');
+    var priceForm = document.getElementById('priceForm');
+    var priceSkuLabel = document.getElementById('priceSkuLabel');
+    var priceInput = document.getElementById('priceInput');
+    var priceSubmitBtn = document.getElementById('priceSubmitBtn');
+    var priceCancelBtn = document.getElementById('priceCancelBtn');
+    var priceFormMsg = document.getElementById('priceFormMsg');
+
     var busy = false, lastCode = "", lastTime = 0;
     var codeReader = null;
+    var pendingSku = null;
 
     startBtn.addEventListener('click', function () {
+      if (APPS_SCRIPT_URL.indexOf("PASTE_YOUR") === 0) {
+        resultDiv.className = 'warn';
+        resultDiv.textContent = "You still need to paste your Apps Script URL into this page's code.";
+        return;
+      }
+
       resultDiv.className = 'idle';
       resultDiv.textContent = 'Requesting camera permission...';
 
@@ -67,7 +98,7 @@
             var now = Date.now();
             if (busy || (text === lastCode && now - lastTime < 3000)) return;
             lastCode = text; lastTime = now;
-            submitScan(text);
+            openPriceForm(text);
           }).then(function () {
             resultDiv.textContent = 'Point camera at a barcode...';
           }).catch(function (err2) {
@@ -81,14 +112,41 @@
         });
     });
 
-    function submitScan(sku) {
+    function openPriceForm(sku) {
       busy = true;
+      pendingSku = sku;
+      priceSkuLabel.textContent = 'Scanned: ' + sku;
+      priceInput.value = '';
+      priceFormMsg.textContent = '';
+      priceForm.style.display = 'block';
       resultDiv.className = 'idle';
-      resultDiv.textContent = 'Looking up ' + sku + '...';
+      resultDiv.textContent = 'Enter the price you sold it for, then Submit.';
+      priceInput.focus();
+    }
+
+    priceCancelBtn.addEventListener('click', function () {
+      priceForm.style.display = 'none';
+      busy = false;
+      lastCode = "";
+      resultDiv.className = 'idle';
+      resultDiv.textContent = 'Point camera at a barcode...';
+    });
+
+    priceSubmitBtn.addEventListener('click', function () {
+      var price = parseFloat(priceInput.value);
+      if (isNaN(price) || price <= 0) {
+        priceFormMsg.textContent = 'Enter a valid price greater than 0.';
+        return;
+      }
+
+      var sku = pendingSku;
+      priceForm.style.display = 'none';
+      resultDiv.className = 'idle';
+      resultDiv.textContent = 'Submitting sale...';
 
       fetch(APPS_SCRIPT_URL, {
         method: 'POST',
-        body: JSON.stringify({ sku: sku, action: 'sell' })
+        body: JSON.stringify({ sku: sku, sellPrice: price })
       })
         .then(function (r) { return r.json(); })
         .then(function (data) {
@@ -100,10 +158,10 @@
         .catch(function () {
           resultDiv.textContent = 'Sent — check your sheet to confirm it updated (could not read back a confirmation message).';
           resultDiv.className = 'warn';
-          logEntry('Sent sell for ' + sku + ' (no confirmation readable)');
+          logEntry('Sent sale for ' + sku + ' at $' + price.toFixed(2) + ' (no confirmation readable)');
           busy = false;
         });
-    }
+    });
 
     function logEntry(msg) {
       var entry = document.createElement('div');
